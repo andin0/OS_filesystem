@@ -1,3 +1,6 @@
+#ifndef USER_MANAGER_H
+#define USER_MANAGER_H
+#include "all_includes.h"
 class UserManager
 {
 public:
@@ -12,3 +15,4 @@ private:
     std::vector<User> user_database_;
     User *current_user_;
 };
+#endif // !USER_MANAGER_H

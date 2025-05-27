@@ -1,3 +1,7 @@
+#ifndef FILESYSTEM_H
+#define FILESYSTEM_H
+#include "all_includes.h"
+
 class FileSystem
 {
 public:
@@ -41,3 +45,5 @@ private:
     // bool recursiveDelete(int dirInodeId); // This logic will be part of rm or a helper called by rm
     // bool recursiveCopy(int sourceDirInodeId, int destParentDirInodeId, const std::string& newName); // This logic will be part of cp or a helper called by cp
 };
+
+#endif // FILESYSTEM_H

@@ -1,3 +1,7 @@
+#ifndef SHELL_H
+#define SHELL_H
+#include "all_includes.h"
+
 class Shell
 {
 public:
@@ -17,3 +21,5 @@ private:
     void handleMkdir(const std::vector<std::string> &args);
     void handleHelp(const std::vector<std::string> &args);
 };
+
+#endif // SHELL_H

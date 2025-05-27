@@ -1,3 +1,5 @@
+#ifndef VIRTUAL_DISK_H
+#define VIRTUAL_DISK_H
 #include "all_includes.h"
 class VirtualDisk
 {
@@ -11,3 +13,4 @@ public:
     bool exists() const;
     bool createDiskFile();
 };
+#endif // !VIRTUAL_DISK_H

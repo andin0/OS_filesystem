@@ -1,14 +1,11 @@
 #include <vector>
 #include <string>
 #include "data_structures.h"
-
-// --- 前向声明 ---
-class VirtualDisk;
-class SuperBlockManager;
-class InodeManager;
-class DataBlockManager;
-class DirectoryManager;
-class FileManager;
-class UserManager;
-class FileSystem;
-class Shell;
+#include "fs_core/datablock_manager.h"
+#include "fs_core/inode_manager.h"
+#include "fs_core/superblock_manager.h"
+#include "fs_core/virtual_disk.h"
+#include "file_operations/directory_manager.h"
+#include "file_operations/file_manager.h"
+#include "user_management/user_manager.h"
+#include "filesystem.h"

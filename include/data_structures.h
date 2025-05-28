@@ -8,12 +8,6 @@ struct ProcessOpenFileEntry
     long long current_offset; // 当前读写指针位置
 };
 
-struct ProcessOpenFileEntry
-{
-    int system_table_idx;     // 指向系统级打开文件表中对应条目的索引
-    long long current_offset; // 当前读写指针位置
-};
-
 struct SuperBlock
 {
     int magic_number;            // 文件系统魔数

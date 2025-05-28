@@ -13,3 +13,4 @@
 #include "file_operations/file_manager.h"
 #include "user_management/user_manager.h"
 #include "filesystem.h"
+#include "shell.h"

@@ -1,5 +1,9 @@
 #include <vector>
 #include <string>
+#include <iostream>
+#include <stack>
+#include <queue>
+#include <unordered_map>
 #include "data_structures.h"
 #include "fs_core/datablock_manager.h"
 #include "fs_core/inode_manager.h"

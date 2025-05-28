@@ -10,4 +10,4 @@ build/
 .svn/
 .swiftpm/
 migrate_working_dir/
-.vscode/
+.vscode

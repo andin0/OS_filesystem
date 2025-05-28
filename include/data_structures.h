@@ -58,7 +58,7 @@ struct User
 {
     short uid;                          // 用户ID
     char username[MAX_USERNAME_LENGTH]; // 用户名, 长度使用 common_defs.h 中定义的常量
-    char password_hash[64];             // 密码哈希值 (例如 SHA256)
+    char *password;                     // 密码明文
     int home_directory_inode_id;        // 用户家目录的inode编号
 };
 

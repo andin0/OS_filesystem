@@ -8,6 +8,8 @@
 // ==                            File System Constants                                ==
 // =====================================================================================
 
+const int DEFAULT_DISK_SIZE = 524288000;
+
 // Limits for names and paths
 const int MAX_FILENAME_LENGTH = 255; // Maximum length for a single filename
 const int MAX_PATH_LENGTH = 1024;    // Maximum length for a full path

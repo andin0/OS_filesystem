@@ -11,3 +11,5 @@ build/
 .swiftpm/
 migrate_working_dir/
 .vscode
+# disk文件夹下是文件系统创建的虚拟磁盘文件，需要屏蔽
+disk 

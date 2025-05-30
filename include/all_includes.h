@@ -1,3 +1,6 @@
+#ifndef ALL_INCLUDES_H
+#define ALL_INCLUDES_H
+
 #include <vector>
 #include <string>
 #include <iostream>
@@ -14,3 +17,5 @@
 #include "user_management/user_manager.h"
 #include "filesystem.h"
 #include "shell.h"
+
+#endif // ALL_INCLUDES_H

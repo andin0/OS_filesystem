@@ -71,7 +71,7 @@ void Shell::executeCommand(const std::vector<std::string> &tokens) {
         handleLs(tokens);
     } 
     else if (command == "create") { //
-        handleCreate(toekns);
+        handleCreate(tokens);
     } 
     else if (command == "rm") { //
         handleRm(tokens);
@@ -161,30 +161,6 @@ void Shell::handleRm(const std::vector<std::string> &args){
     }
 }
 
-void Shell::handleLs(const std::vector<std::string> &args){
-    if (tokens.size() < 2) {
-        td::cerr << "Usage: rm [-r] [-f] <path>" << std::endl;
-    } 
-    else {
-    // 解析 -r 和 -f 参数
-        bool recursive = false;
-        bool force = false;
-        std::string path;
-        for (size_t i = 1; i < tokens.size(); ++i) {
-            if (tokens[i] == "-r") recursive = true;
-                else if (tokens[i] == "-f") force = true;
-                else path = tokens[i];
-        }
-        if (path.empty()) {
-           std::cerr << "Usage: rm [-r] [-f] <path>" << std::endl;
-        } 
-        else {
-            if (!fs_->rm(path, recursive, force)) { //
-                 std::cerr << "rm: Failed to remove " << path << std::endl;
-            }
-        }
-    }
-}
 
 void Shell::handleLogout(const std::vector<std::string> &args) { //
     fs_->logoutUser(); //

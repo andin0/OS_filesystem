@@ -20,6 +20,14 @@ private:
     void handleLogout(const std::vector<std::string> &args);
     void handleMkdir(const std::vector<std::string> &args);
     void handleHelp(const std::vector<std::string> &args);
+    void handleOpen(const std::vector<std::string> &args);
+    void handleClose(const std::vector<std::string> &args);
+    void handleWrite(const std::vector<std::string> &args);
+    void handleRead(const std::vector<std::string> &args);
+    void handleCd(const std::vector<std::string> &args);
+    void handleLs(const std::vector<std::string> &args);
+    void handleCreate(const std::vector<std::string> &args);
+    void handleRm(const std::vector<std::string> &args);
 };
 
 #endif // SHELL_H

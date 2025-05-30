@@ -12,5 +12,10 @@ public:
     int getBlockSize() const;
     bool exists() const;
     bool createDiskFile();
+private:
+    std::string diskFilePath_; // ✅ 添加此行：磁盘文件路径
+    long long diskSize_;
+    long long totalBlocks_;
+    long long blockSize_;
 };
 #endif // !VIRTUAL_DISK_H

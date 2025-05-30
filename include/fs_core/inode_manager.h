@@ -8,5 +8,8 @@ public:
     bool readInode(int inodeId, Inode &inode); // Inode 结构体在 data_structures.h
     bool writeInode(int inodeId, const Inode &inode);
     int getBlockIdForFileOffset(Inode &inode, long long offset, bool allocateIfMissing);
+private: // 添加私有成员变量
+    VirtualDisk* vdisk_;            // 指向虚拟磁盘对象的指针
+    SuperBlockManager* sb_manager_; // 指向超级块管理器对象的指针
 };
 #endif // INODE_MANAGER_H

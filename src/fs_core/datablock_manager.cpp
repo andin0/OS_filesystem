@@ -14,7 +14,7 @@
 // inodeManager: 指向 InodeManager 对象的指针。
 // sbManager: 指向 SuperBlockManager 对象的指针。
 DataBlockManager::DataBlockManager(VirtualDisk *vdisk, InodeManager *inodeManager, SuperBlockManager *sbManager)
-    //: vdisk_(vdisk), inode_manager_(inodeManager), sb_manager_(sbManager) 
+    : vdisk_(vdisk), inode_manager_(inodeManager), sb_manager_(sbManager)
     {
     if (!vdisk || !inodeManager || !sbManager) {
         throw std::runtime_error("DataBlockManager: VirtualDisk, InodeManager, 或 SuperBlockManager 指针为空。");

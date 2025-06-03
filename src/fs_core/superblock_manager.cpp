@@ -1,38 +1,42 @@
 #include "fs_core/superblock_manager.h"
-#include "fs_core/virtual_disk.h"
 #include "common_defs.h"
-#include "data_structures.h"
 #include <iostream>
 #include <vector>
-#include <cstring> // For std::memcpy and std::memset
+#include <cstring>   // For std::memcpy and std::memset
 #include <algorithm> // For std::min
 
 // SuperBlockManager 构造函数
 // vdisk: 指向 VirtualDisk 对象的指针。
 SuperBlockManager::SuperBlockManager(VirtualDisk *vdisk)
-    : vdisk_(vdisk), superblock_({}) 
+    : vdisk_(vdisk), superblock_({})
+{
+    if (!vdisk_)
     {
-    if (!vdisk_) {
         throw std::runtime_error("SuperBlockManager: VirtualDisk 指针为空。");
     }
 }
 
 // 从虚拟磁盘加载超级块
-bool SuperBlockManager::loadSuperBlock() {
-    if (!vdisk_) return false;
+bool SuperBlockManager::loadSuperBlock()
+{
+    if (!vdisk_)
+        return false;
     char buffer[DEFAULT_BLOCK_SIZE];
-    if (!vdisk_->readBlock(0, buffer, vdisk_->getBlockSize())) {
+    if (!vdisk_->readBlock(0, buffer, vdisk_->getBlockSize()))
+    {
         std::cerr << "错误: SuperBlockManager 无法从磁盘读取块 0 (超级块)。" << std::endl;
         return false;
     }
     std::memcpy(&superblock_, buffer, sizeof(SuperBlock));
 
-    if (superblock_.magic_number != FILESYSTEM_MAGIC_NUMBER) {
+    if (superblock_.magic_number != FILESYSTEM_MAGIC_NUMBER)
+    {
         std::cerr << "错误: 无效的文件系统魔数。磁盘可能未格式化或已损坏。" << std::endl;
         superblock_ = {};
         return false;
     }
-    if (superblock_.block_size != vdisk_->getBlockSize()) {
+    if (superblock_.block_size != vdisk_->getBlockSize())
+    {
         std::cerr << "警告: 超级块中的 block_size (" << superblock_.block_size
                   << ") 与虚拟磁盘的 block_size (" << vdisk_->getBlockSize()
                   << ") 不匹配。这可能导致严重问题。" << std::endl;
@@ -43,12 +47,15 @@ bool SuperBlockManager::loadSuperBlock() {
 }
 
 // 将当前内存中的超级块保存到虚拟磁盘
-bool SuperBlockManager::saveSuperBlock() {
-    if (!vdisk_) return false;
+bool SuperBlockManager::saveSuperBlock()
+{
+    if (!vdisk_)
+        return false;
     char buffer[DEFAULT_BLOCK_SIZE];
     std::memset(buffer, 0, vdisk_->getBlockSize());
     std::memcpy(buffer, &superblock_, sizeof(SuperBlock));
-    if (!vdisk_->writeBlock(0, buffer, vdisk_->getBlockSize())) {
+    if (!vdisk_->writeBlock(0, buffer, vdisk_->getBlockSize()))
+    {
         std::cerr << "错误: SuperBlockManager 无法将超级块写入磁盘块 0。" << std::endl;
         return false;
     }
@@ -56,8 +63,10 @@ bool SuperBlockManager::saveSuperBlock() {
 }
 
 // Helper: 读取 i-node 位图的一个块
-bool SuperBlockManager::readInodeBitmapBlock(int bitmap_block_offset, char* buffer) const {
-    if (!vdisk_ || bitmap_block_offset < 0 || bitmap_block_offset >= superblock_.inode_bitmap_blocks_count) {
+bool SuperBlockManager::readInodeBitmapBlock(int bitmap_block_offset, char *buffer) const
+{
+    if (!vdisk_ || bitmap_block_offset < 0 || bitmap_block_offset >= superblock_.inode_bitmap_blocks_count)
+    {
         std::cerr << "错误 (readInodeBitmapBlock): 无效的位图块偏移 " << bitmap_block_offset << std::endl;
         return false;
     }
@@ -66,8 +75,10 @@ bool SuperBlockManager::readInodeBitmapBlock(int bitmap_block_offset, char* buff
 }
 
 // Helper: 写入 i-node 位图的一个块
-bool SuperBlockManager::writeInodeBitmapBlock(int bitmap_block_offset, const char* buffer) {
-     if (!vdisk_ || bitmap_block_offset < 0 || bitmap_block_offset >= superblock_.inode_bitmap_blocks_count) {
+bool SuperBlockManager::writeInodeBitmapBlock(int bitmap_block_offset, const char *buffer)
+{
+    if (!vdisk_ || bitmap_block_offset < 0 || bitmap_block_offset >= superblock_.inode_bitmap_blocks_count)
+    {
         std::cerr << "错误 (writeInodeBitmapBlock): 无效的位图块偏移 " << bitmap_block_offset << std::endl;
         return false;
     }
@@ -79,8 +90,10 @@ bool SuperBlockManager::writeInodeBitmapBlock(int bitmap_block_offset, const cha
 // inodeId: 要检查的 i-node ID。
 // isSet: 输出参数，如果 i-node 已使用则为 true，否则为 false。
 // 返回值: 操作是否成功。
-bool SuperBlockManager::getInodeBit(int inodeId, bool& isSet) const {
-    if (inodeId < 0 || inodeId >= superblock_.total_inodes) {
+bool SuperBlockManager::getInodeBit(int inodeId, bool &isSet) const
+{
+    if (inodeId < 0 || inodeId >= superblock_.total_inodes)
+    {
         std::cerr << "错误 (getInodeBit): i-node ID " << inodeId << " 超出范围。" << std::endl;
         return false;
     }
@@ -90,13 +103,15 @@ bool SuperBlockManager::getInodeBit(int inodeId, bool& isSet) const {
     int byte_offset_in_block = (bit_offset / 8) % superblock_.block_size;
     int bit_offset_in_byte = bit_offset % 8;
 
-    if (block_offset_in_bitmap >= superblock_.inode_bitmap_blocks_count) {
+    if (block_offset_in_bitmap >= superblock_.inode_bitmap_blocks_count)
+    {
         std::cerr << "错误 (getInodeBit): 计算得到的位图块偏移 " << block_offset_in_bitmap << " 超出范围。" << std::endl;
         return false;
     }
 
-    std::vector<char> bitmap_block_buffer(superblock_.block_size); 
-    if (!readInodeBitmapBlock(block_offset_in_bitmap, bitmap_block_buffer.data())) {
+    std::vector<char> bitmap_block_buffer(superblock_.block_size);
+    if (!readInodeBitmapBlock(block_offset_in_bitmap, bitmap_block_buffer.data()))
+    {
         return false;
     }
 
@@ -108,8 +123,10 @@ bool SuperBlockManager::getInodeBit(int inodeId, bool& isSet) const {
 // inodeId: 要设置的 i-node ID。
 // setToUsed: true 表示标记为已使用 (1)，false 表示标记为空闲 (0)。
 // 返回值: 操作是否成功。
-bool SuperBlockManager::setInodeBit(int inodeId, bool setToUsed) {
-    if (inodeId < 0 || inodeId >= superblock_.total_inodes) {
+bool SuperBlockManager::setInodeBit(int inodeId, bool setToUsed)
+{
+    if (inodeId < 0 || inodeId >= superblock_.total_inodes)
+    {
         std::cerr << "错误 (setInodeBit): i-node ID " << inodeId << " 超出范围。" << std::endl;
         return false;
     }
@@ -119,7 +136,8 @@ bool SuperBlockManager::setInodeBit(int inodeId, bool setToUsed) {
     int byte_offset_in_block = (bit_offset / 8) % superblock_.block_size;
     int bit_offset_in_byte = bit_offset % 8;
 
-    if (block_offset_in_bitmap >= superblock_.inode_bitmap_blocks_count) {
+    if (block_offset_in_bitmap >= superblock_.inode_bitmap_blocks_count)
+    {
         std::cerr << "错误 (setInodeBit): 计算得到的位图块偏移 " << block_offset_in_bitmap << " 超出范围。" << std::endl;
         return false;
     }
@@ -128,33 +146,41 @@ bool SuperBlockManager::setInodeBit(int inodeId, bool setToUsed) {
     std::vector<char> bitmap_block_buffer(superblock_.block_size); // <--- 修改后的行
 
     // 使用 .data() 获取指向vector内部数据的指针传递给C风格API
-    if (!readInodeBitmapBlock(block_offset_in_bitmap, bitmap_block_buffer.data())) {
+    if (!readInodeBitmapBlock(block_offset_in_bitmap, bitmap_block_buffer.data()))
+    {
         return false; // 读取失败
     }
 
-    if (setToUsed) {
-        //可以直接使用[]访问vector元素
+    if (setToUsed)
+    {
+        // 可以直接使用[]访问vector元素
         bitmap_block_buffer[byte_offset_in_block] |= (1 << bit_offset_in_byte);
-    } else {
+    }
+    else
+    {
         bitmap_block_buffer[byte_offset_in_block] &= ~(1 << bit_offset_in_byte);
     }
 
     // 使用 .data() 获取指向vector内部数据的指针传递给C风格API
-    if (!writeInodeBitmapBlock(block_offset_in_bitmap, bitmap_block_buffer.data())) {
+    if (!writeInodeBitmapBlock(block_offset_in_bitmap, bitmap_block_buffer.data()))
+    {
         return false; // 写入失败
     }
     return true;
 }
 
-
 // 格式化文件系统
-bool SuperBlockManager::formatFileSystem(int totalInodes, int blockSize) {
-    if (!vdisk_) return false;
-    if (blockSize <= 0 || totalInodes <= 0) {
+bool SuperBlockManager::formatFileSystem(int totalInodes, int blockSize)
+{
+    if (!vdisk_)
+        return false;
+    if (blockSize <= 0 || totalInodes <= 0)
+    {
         std::cerr << "错误: 无效的块大小 (" << blockSize << ") 或 i-node 总数 (" << totalInodes << ")。" << std::endl;
         return false;
     }
-    if (vdisk_->getBlockSize() != blockSize) {
+    if (vdisk_->getBlockSize() != blockSize)
+    {
         std::cerr << "错误: 请求的块大小 (" << blockSize
                   << ") 与虚拟磁盘的块大小 (" << vdisk_->getBlockSize()
                   << ") 不匹配。" << std::endl;
@@ -176,7 +202,8 @@ bool SuperBlockManager::formatFileSystem(int totalInodes, int blockSize) {
 
     // 2. 计算 i-node 表所需的空间
     int inodes_per_block = blockSize / superblock_.inode_size;
-    if (inodes_per_block == 0) {
+    if (inodes_per_block == 0)
+    {
         std::cerr << "错误: 块大小 " << blockSize << " 对于 i-node 大小 " << superblock_.inode_size << " 太小。" << std::endl;
         return false;
     }
@@ -186,7 +213,8 @@ bool SuperBlockManager::formatFileSystem(int totalInodes, int blockSize) {
     // 3. 计算第一个数据块的起始位置
     superblock_.first_data_block_idx = superblock_.inode_table_start_block_idx + inode_table_blocks_count;
 
-    if (superblock_.first_data_block_idx >= superblock_.total_blocks) {
+    if (superblock_.first_data_block_idx >= superblock_.total_blocks)
+    {
         std::cerr << "错误: 磁盘空间不足以容纳超级块、i-node位图、i-node表和至少一个数据块。" << std::endl;
         std::cerr << "  总块数: " << superblock_.total_blocks << std::endl;
         std::cerr << "  超级块: 1 块" << std::endl;
@@ -206,15 +234,18 @@ bool SuperBlockManager::formatFileSystem(int totalInodes, int blockSize) {
     // 初始化 i-node 位图 (所有位清零)
     std::vector<char> zero_buffer(blockSize);
     std::memset(zero_buffer.data(), 0, blockSize);
-    for (int i = 0; i < superblock_.inode_bitmap_blocks_count; ++i) {
-        if (!writeInodeBitmapBlock(i, zero_buffer.data())) { // 使用相对位图块的偏移
+    for (int i = 0; i < superblock_.inode_bitmap_blocks_count; ++i)
+    {
+        if (!writeInodeBitmapBlock(i, zero_buffer.data()))
+        { // 使用相对位图块的偏移
             std::cerr << "错误: 格式化期间初始化i-node位图块 " << i << " 失败。" << std::endl;
             return false;
         }
     }
 
     // 分配根目录的 i-node (标记位图中的第 ROOT_DIRECTORY_INODE_ID 位为1)
-    if (!setInodeBit(ROOT_DIRECTORY_INODE_ID, true)) {
+    if (!setInodeBit(ROOT_DIRECTORY_INODE_ID, true))
+    {
         std::cerr << "错误: 格式化期间无法标记根i-node " << ROOT_DIRECTORY_INODE_ID << " 为已使用。" << std::endl;
         return false;
     }
@@ -223,15 +254,18 @@ bool SuperBlockManager::formatFileSystem(int totalInodes, int blockSize) {
     // 初始化成组链接法的空闲块堆栈
     initializeFreeBlockGroups();
 
-    if (!saveSuperBlock()) {
+    if (!saveSuperBlock())
+    {
         std::cerr << "错误: 格式化期间保存超级块失败。" << std::endl;
         return false;
     }
 
     // 清空i-node表区域 (可选，但推荐)
     std::memset(zero_buffer.data(), 0, blockSize);
-    for (int i = 0; i < inode_table_blocks_count; ++i) {
-        if (!vdisk_->writeBlock(superblock_.inode_table_start_block_idx + i, zero_buffer.data(), blockSize)) {
+    for (int i = 0; i < inode_table_blocks_count; ++i)
+    {
+        if (!vdisk_->writeBlock(superblock_.inode_table_start_block_idx + i, zero_buffer.data(), blockSize))
+        {
             std::cerr << "警告: 格式化期间清空i-node表块 " << (superblock_.inode_table_start_block_idx + i) << " 失败。" << std::endl;
         }
     }
@@ -246,53 +280,64 @@ bool SuperBlockManager::formatFileSystem(int totalInodes, int blockSize) {
 }
 
 // 初始化成组链接法的空闲块组 (与之前版本基本一致)
-void SuperBlockManager::initializeFreeBlockGroups() {
-    if (superblock_.free_blocks_count == 0) {
+void SuperBlockManager::initializeFreeBlockGroups()
+{
+    if (superblock_.free_blocks_count == 0)
+    {
         superblock_.free_block_stack_top_idx = INVALID_BLOCK_ID;
         return;
     }
 
     std::vector<int> available_blocks_for_groups_and_data;
-    for (long long i = superblock_.first_data_block_idx; i < superblock_.total_blocks; ++i) {
+    for (long long i = superblock_.first_data_block_idx; i < superblock_.total_blocks; ++i)
+    {
         available_blocks_for_groups_and_data.push_back(static_cast<int>(i));
     }
     // superblock_.free_blocks_count 已经在 formatFileSystem 中正确设置了初始值
 
-    if (available_blocks_for_groups_and_data.empty()) {
+    if (available_blocks_for_groups_and_data.empty())
+    {
         superblock_.free_block_stack_top_idx = INVALID_BLOCK_ID;
         return;
     }
 
     const int ids_per_group_block = (superblock_.block_size / sizeof(int)) - 1;
-    if (ids_per_group_block <= 0) {
+    if (ids_per_group_block <= 0)
+    {
         std::cerr << "错误 (initializeFreeBlockGroups): block_size " << superblock_.block_size << " 太小。" << std::endl;
         superblock_.free_block_stack_top_idx = INVALID_BLOCK_ID;
         return;
     }
 
     std::vector<char> block_buffer(superblock_.block_size);
-    FreeBlockGroup* current_group_struct = reinterpret_cast<FreeBlockGroup*>(block_buffer.data());
+    FreeBlockGroup *current_group_struct = reinterpret_cast<FreeBlockGroup *>(block_buffer.data());
     int next_super_group_block_id = INVALID_BLOCK_ID;
 
     // 从后向前取块作为组头，这样栈顶组的ID较高
-    while (!available_blocks_for_groups_and_data.empty()) {
+    while (!available_blocks_for_groups_and_data.empty())
+    {
         int current_s_group_block_id = available_blocks_for_groups_and_data.back();
         available_blocks_for_groups_and_data.pop_back();
 
         std::memset(block_buffer.data(), 0, superblock_.block_size);
         current_group_struct->count = 0;
 
-        if (next_super_group_block_id != INVALID_BLOCK_ID) {
-            if (current_group_struct->count < N_FREE_BLOCKS_PER_GROUP) { // N_FREE_BLOCKS_PER_GROUP 是数组大小
-                 current_group_struct->next_group_block_ids[current_group_struct->count++] = next_super_group_block_id;
-            } else { // 这种情况不应该发生，因为我们刚取出一个块做组头，count 应该是0
+        if (next_super_group_block_id != INVALID_BLOCK_ID)
+        {
+            if (current_group_struct->count < N_FREE_BLOCKS_PER_GROUP)
+            { // N_FREE_BLOCKS_PER_GROUP 是数组大小
+                current_group_struct->next_group_block_ids[current_group_struct->count++] = next_super_group_block_id;
+            }
+            else
+            { // 这种情况不应该发生，因为我们刚取出一个块做组头，count 应该是0
                 std::cerr << "错误 (initializeFreeBlockGroups): 组已满，无法存储 next_super_group_block_id。" << std::endl;
                 available_blocks_for_groups_and_data.push_back(current_s_group_block_id); // 归还
                 break;
             }
         }
 
-        while(current_group_struct->count < N_FREE_BLOCKS_PER_GROUP && !available_blocks_for_groups_and_data.empty()){
+        while (current_group_struct->count < N_FREE_BLOCKS_PER_GROUP && !available_blocks_for_groups_and_data.empty())
+        {
             current_group_struct->next_group_block_ids[current_group_struct->count++] = available_blocks_for_groups_and_data.back();
             available_blocks_for_groups_and_data.pop_back();
         }
@@ -302,23 +347,26 @@ void SuperBlockManager::initializeFreeBlockGroups() {
     superblock_.free_block_stack_top_idx = next_super_group_block_id;
 }
 
-
 // 分配一个空闲数据块 (与之前版本基本一致)
-int SuperBlockManager::allocateBlock() {
-    if (superblock_.free_blocks_count == 0 || superblock_.free_block_stack_top_idx == INVALID_BLOCK_ID) {
+int SuperBlockManager::allocateBlock()
+{
+    if (superblock_.free_blocks_count == 0 || superblock_.free_block_stack_top_idx == INVALID_BLOCK_ID)
+    {
         std::cerr << "错误: 没有空闲数据块可分配。" << std::endl;
         return INVALID_BLOCK_ID;
     }
 
     std::vector<char> buffer(superblock_.block_size);
-    FreeBlockGroup* group_block = reinterpret_cast<FreeBlockGroup*>(buffer.data());
+    FreeBlockGroup *group_block = reinterpret_cast<FreeBlockGroup *>(buffer.data());
 
-    if (!vdisk_->readBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size)) {
+    if (!vdisk_->readBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size))
+    {
         std::cerr << "错误: 无法读取空闲块组 " << superblock_.free_block_stack_top_idx << std::endl;
         return INVALID_BLOCK_ID;
     }
 
-    if (group_block->count == 0) {
+    if (group_block->count == 0)
+    {
         std::cerr << "错误: 空闲块组 " << superblock_.free_block_stack_top_idx << " 为空 (count=0)。" << std::endl;
         return INVALID_BLOCK_ID;
     }
@@ -326,8 +374,8 @@ int SuperBlockManager::allocateBlock() {
     group_block->count--;
     int allocated_block_id = group_block->next_group_block_ids[group_block->count];
 
-
-    if (group_block->count == 0) { // 组内指针用完，切换到下一组
+    if (group_block->count == 0)
+    { // 组内指针用完，切换到下一组
         // 假设 next_group_block_ids[0] (当count减为0之前，它是最后一个有效指针的前一个)
         // 或者说，当count最初是1时，next_group_block_ids[0]是最后一个数据块指针，
         // 此时，这个组块本身需要变成下一个组（如果它之前链接了的话）。
@@ -372,9 +420,12 @@ int SuperBlockManager::allocateBlock() {
         // 而是链表指针更新。
         superblock_.free_block_stack_top_idx = next_stack_top;
         // 注意：这里没有写回 group_block 的修改（count=0），因为这个块即将不再是栈顶。
-    } else {
+    }
+    else
+    {
         // 如果组未空，需要将修改后的组（count减少）写回磁盘
-        if (!vdisk_->writeBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size)) {
+        if (!vdisk_->writeBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size))
+        {
             std::cerr << "错误: 更新空闲块组 " << superblock_.free_block_stack_top_idx << " 失败。" << std::endl;
             // 回滚操作？这很复杂。可能需要标记文件系统为不一致状态。
             // superblock_.free_blocks_count++; // 尝试恢复计数，但不安全
@@ -382,89 +433,111 @@ int SuperBlockManager::allocateBlock() {
         }
     }
     superblock_.free_blocks_count--; // 这个应该在分配成功后执行
-    if (!saveSuperBlock()) {
+    if (!saveSuperBlock())
+    {
         std::cerr << "警告: 分配块后保存超级块失败。" << std::endl;
     }
     return allocated_block_id;
 }
 
 // 释放一个数据块 (与之前版本基本一致，但适配了成组链接法模型)
-void SuperBlockManager::freeBlock(int blockId) {
-    if (blockId < superblock_.first_data_block_idx || blockId >= superblock_.total_blocks) {
+void SuperBlockManager::freeBlock(int blockId)
+{
+    if (blockId < superblock_.first_data_block_idx || blockId >= superblock_.total_blocks)
+    {
         std::cerr << "警告: 尝试释放一个无效的数据块ID " << blockId << "." << std::endl;
         return;
     }
 
     std::vector<char> buffer(superblock_.block_size);
-    FreeBlockGroup* group_block_struct = reinterpret_cast<FreeBlockGroup*>(buffer.data());
+    FreeBlockGroup *group_block_struct = reinterpret_cast<FreeBlockGroup *>(buffer.data());
     // const int ids_per_group_block = (superblock_.block_size / sizeof(int)) - 1;
     // N_FREE_BLOCKS_PER_GROUP 是数组大小，不是ids_per_group_block
 
     bool stack_top_is_full = false;
-    if (superblock_.free_block_stack_top_idx != INVALID_BLOCK_ID) {
-        if (!vdisk_->readBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size)) {
+    if (superblock_.free_block_stack_top_idx != INVALID_BLOCK_ID)
+    {
+        if (!vdisk_->readBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size))
+        {
             std::cerr << "错误: 释放块时无法读取栈顶空闲组 " << superblock_.free_block_stack_top_idx << std::endl;
             return;
         }
-        if (group_block_struct->count >= N_FREE_BLOCKS_PER_GROUP) { // 组内指针数组已满
+        if (group_block_struct->count >= N_FREE_BLOCKS_PER_GROUP)
+        { // 组内指针数组已满
             stack_top_is_full = true;
         }
-    } else {
+    }
+    else
+    {
         stack_top_is_full = true; // 没有栈顶组，视为已满
     }
 
-    if (stack_top_is_full) {
+    if (stack_top_is_full)
+    {
         // 当前栈顶组已满，将要释放的 blockId 自身变成新的栈顶组。
         // 新组的第一个指针指向旧的栈顶组。
         std::memset(buffer.data(), 0, superblock_.block_size);
         group_block_struct->count = 0; // 初始化计数
-        if (superblock_.free_block_stack_top_idx != INVALID_BLOCK_ID) {
-             group_block_struct->next_group_block_ids[group_block_struct->count++] = superblock_.free_block_stack_top_idx;
+        if (superblock_.free_block_stack_top_idx != INVALID_BLOCK_ID)
+        {
+            group_block_struct->next_group_block_ids[group_block_struct->count++] = superblock_.free_block_stack_top_idx;
         }
         // 新的栈顶是 blockId
         superblock_.free_block_stack_top_idx = blockId;
-        if (!vdisk_->writeBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size)) {
+        if (!vdisk_->writeBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size))
+        {
             std::cerr << "错误: 无法将块 " << blockId << " 初始化为新的空闲组。" << std::endl;
             // 回滚 superblock_.free_block_stack_top_idx ?
             return;
         }
-    } else {
+    }
+    else
+    {
         // 当前栈顶组未满，直接将 blockId 添加到其中
         // (此时 buffer 中已经是栈顶组的内容)
         group_block_struct->next_group_block_ids[group_block_struct->count++] = blockId;
-        if (!vdisk_->writeBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size)) {
+        if (!vdisk_->writeBlock(superblock_.free_block_stack_top_idx, buffer.data(), superblock_.block_size))
+        {
             std::cerr << "错误: 无法将块 " << blockId << " 添加到空闲组 " << superblock_.free_block_stack_top_idx << std::endl;
             return;
         }
     }
 
     superblock_.free_blocks_count++;
-    if (!saveSuperBlock()) {
+    if (!saveSuperBlock())
+    {
         std::cerr << "警告: 释放块后保存超级块失败。" << std::endl;
     }
 }
 
 // 分配一个空闲i-node (使用i-node位图)
-int SuperBlockManager::allocateInode() {
-    if (superblock_.free_inodes_count == 0) {
+int SuperBlockManager::allocateInode()
+{
+    if (superblock_.free_inodes_count == 0)
+    {
         std::cerr << "信息: 没有空闲i-node可分配。" << std::endl;
         return INVALID_INODE_ID;
     }
 
-    for (int i = 0; i < superblock_.total_inodes; ++i) {
+    for (int i = 0; i < superblock_.total_inodes; ++i)
+    {
         bool is_used;
-        if (!getInodeBit(i, is_used)) {
+        if (!getInodeBit(i, is_used))
+        {
             std::cerr << "错误: 检查i-node " << i << " 状态失败。" << std::endl;
             return INVALID_INODE_ID; // 严重错误，无法继续
         }
-        if (!is_used) {
+        if (!is_used)
+        {
             // 找到一个空闲i-node
-            if (!setInodeBit(i, true)) {
+            if (!setInodeBit(i, true))
+            {
                 std::cerr << "错误: 标记i-node " << i << " 为已使用失败。" << std::endl;
                 return INVALID_INODE_ID; // 严重错误
             }
             superblock_.free_inodes_count--;
-            if (!saveSuperBlock()) {
+            if (!saveSuperBlock())
+            {
                 std::cerr << "警告: 分配i-node " << i << " 后保存超级块失败。" << std::endl;
                 // 应该回滚 setInodeBit 和 free_inodes_count 吗？复杂。
                 // 暂时不回滚，但标记文件系统可能不一致。
@@ -485,41 +558,49 @@ int SuperBlockManager::allocateInode() {
 }
 
 // 释放一个i-node (使用i-node位图)
-void SuperBlockManager::freeInode(int inodeId) {
-    if (inodeId < 0 || inodeId >= superblock_.total_inodes) {
+void SuperBlockManager::freeInode(int inodeId)
+{
+    if (inodeId < 0 || inodeId >= superblock_.total_inodes)
+    {
         std::cerr << "警告: 尝试释放一个无效的i-node ID " << inodeId << "." << std::endl;
         return;
     }
 
     bool is_used;
-    if (!getInodeBit(inodeId, is_used)) {
+    if (!getInodeBit(inodeId, is_used))
+    {
         std::cerr << "错误: 检查i-node " << inodeId << " 状态以进行释放失败。" << std::endl;
         return;
     }
 
-    if (!is_used) {
+    if (!is_used)
+    {
         std::cerr << "警告: 尝试释放一个已经是空闲的i-node " << inodeId << "." << std::endl;
         return;
     }
 
-    if (!setInodeBit(inodeId, false)) {
+    if (!setInodeBit(inodeId, false))
+    {
         std::cerr << "错误: 标记i-node " << inodeId << " 为空闲失败。" << std::endl;
         return;
     }
 
     superblock_.free_inodes_count++;
-    if (superblock_.free_inodes_count > superblock_.total_inodes) {
-         std::cerr << "警告: free_inodes_count (" << superblock_.free_inodes_count
-                   << ") 超出 total_inodes (" << superblock_.total_inodes
-                   << ") 在释放 inode " << inodeId << " 后。" << std::endl;
+    if (superblock_.free_inodes_count > superblock_.total_inodes)
+    {
+        std::cerr << "警告: free_inodes_count (" << superblock_.free_inodes_count
+                  << ") 超出 total_inodes (" << superblock_.total_inodes
+                  << ") 在释放 inode " << inodeId << " 后。" << std::endl;
         superblock_.free_inodes_count = superblock_.total_inodes; // 校正
     }
 
-    if (!saveSuperBlock()) {
+    if (!saveSuperBlock())
+    {
         std::cerr << "警告: 释放i-node " << inodeId << " 后保存超级块失败。" << std::endl;
     }
 }
 
-const SuperBlock &SuperBlockManager::getSuperBlockInfo() const {
+const SuperBlock &SuperBlockManager::getSuperBlockInfo() const
+{
     return superblock_;
 }

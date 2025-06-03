@@ -1,6 +1,6 @@
 #ifndef VIRTUAL_DISK_H
 #define VIRTUAL_DISK_H
-#include "all_includes.h"
+#include <string>
 class VirtualDisk
 {
 public:
@@ -12,6 +12,7 @@ public:
     int getBlockSize() const;
     bool exists() const;
     bool createDiskFile();
+
 private:
     std::string diskFilePath_; // ✅ 添加此行：磁盘文件路径
     long long diskSize_;

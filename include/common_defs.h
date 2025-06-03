@@ -11,8 +11,10 @@
 const int DEFAULT_DISK_SIZE = 524288000;
 
 // Limits for names and paths
-const int MAX_FILENAME_LENGTH = 255; // Maximum length for a single filename
-const int MAX_PATH_LENGTH = 1024;    // Maximum length for a full path
+const int MAX_FILENAME_LENGTH = 255;       // Maximum length for a single filename
+const int MAX_PATH_LENGTH = 1024;          // Maximum length for a full path
+const int MAX_SYSTEM_OPEN_FILES = 64;      // Maximum number of files that can be opened system-wide
+const int MAX_OPEN_FILES_PER_PROCESS = 16; // Maximum number of files that can be opened by a single process
 
 // Block and Inode related constants
 const int NUM_DIRECT_BLOCKS = 10;      // Number of direct block pointers in an Inode struct

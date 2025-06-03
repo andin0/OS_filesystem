@@ -1,6 +1,11 @@
 #ifndef SHELL_H
 #define SHELL_H
-#include "all_includes.h"
+#include "filesystem.h"
+#include <iostream>
+#include <string>
+#include <vector>
+#include <sstream>
+#include "data_structures.h" // 包含 ProcessOpenFileEntry 和 SystemOpenFileEntry
 
 class Shell
 {

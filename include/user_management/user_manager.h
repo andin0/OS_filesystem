@@ -1,6 +1,11 @@
 #ifndef USER_MANAGER_H
 #define USER_MANAGER_H
-#include "all_includes.h"
+
+#include <string>
+#include <vector>
+#include "data_structures.h"
+#include "common_defs.h"
+
 class UserManager
 {
 public:
@@ -8,7 +13,12 @@ public:
     User *login(const std::string &username, const std::string &password); // User 在 data_structures.h
     void logout();
     User *getCurrentUser() const;
-    bool checkAccessPermission(const Inode &inode, PermissionAction action) const; // 检查当前用户对某inode是否有某种操作权限 // PermissionAction 在 common_defs.h
+    bool checkAccessPermission(const Inode &inode, PermissionAction action) const;
+    bool initializeUsers()
+    {
+        return true;
+    }
+
 private:
     User admin = {0, "admin", "admin", 0};
     User ming = {1, "ming", "ming", 1};

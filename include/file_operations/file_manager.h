@@ -1,6 +1,17 @@
 #ifndef FILE_MANAGER_H
 #define FILE_MANAGER_H
-#include "all_includes.h"
+#include <chrono>
+#include <algorithm>
+#include <vector>
+#include <iostream>
+#include "fs_core/inode_manager.h"
+#include "fs_core/superblock_manager.h"
+#include "fs_core/datablock_manager.h"
+#include "file_operations/directory_manager.h"
+#include "data_structures.h"
+#include "common_defs.h"
+class DataBlockManager;
+
 class FileManager
 {
 public:
@@ -10,7 +21,13 @@ public:
     bool closeFile(int fd, std::vector<ProcessOpenFileEntry> &processOpenFileTable, std::vector<SystemOpenFileEntry> &systemOpenFileTable);
     int readFile(int fd, char *buffer, int length, const std::vector<ProcessOpenFileEntry> &processOpenFileTable, std::vector<SystemOpenFileEntry> &systemOpenFileTable);
     int writeFile(int fd, const char *buffer, int length, std::vector<ProcessOpenFileEntry> &processOpenFileTable, std::vector<SystemOpenFileEntry> &systemOpenFileTable);
-    bool deleteFileByInode(int inodeId); // This might need adjustment based on new rm logic (e.g. handling directory deletion logic elsewhere)
+    bool deleteFileByInode(int inodeId);
+
+private:
+    DataBlockManager *db_manager_;
+    InodeManager *inode_manager_;
+    SuperBlockManager *sb_manager_;
+    DirectoryManager *dir_manager_;
 };
 
 #endif // FILE_MANAGER_H

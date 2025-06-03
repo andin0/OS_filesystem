@@ -17,17 +17,29 @@ struct SuperBlock
     int free_inodes_count;       // 空闲i-node数量
     int block_size;              // 每块大小 (例如 1024 bytes)
     int inode_size;              // 每个i-node大小
+
+    // i-node 位图信息
+    int inode_bitmap_start_block_idx; // i-node位图的起始块号
+    int inode_bitmap_blocks_count;    // i-node位图占用的块数
+
+    // i-node 表信息
+    int inode_table_start_block_idx;  // i-node表的起始块号
+                                      // (i-node表的块数可以根据total_inodes, inode_size, block_size计算得到)
+
     int first_data_block_idx;    // 第一个数据块的起始块号
     int root_dir_inode_idx;      // 根目录的inode号
+
     // 成组链接法相关
     int free_block_stack_top_idx; // 空闲块堆栈顶块的块号 (栈中第一个块)
-    int max_filename_length;      // 最大文件名长度 (将在 common_defs.h 中定义常量)
-    int max_path_length;          // 最大路径长度 (将在 common_defs.h 中定义常量)
+
+    int max_filename_length;      // 最大文件名长度
+    int max_path_length;          // 最大路径长度
 };
 
 struct Inode
 {
-    int inode_id;                // i-node编号
+    int inode_id;                // i-node编号 (在某些设计中可能不需要，因为ID是其在表中的位置)
+                                 // 但如果存在，可以用于完整性检查
     FileType file_type;          // 文件类型 (文件/目录)
     short permissions;           // 权限 (rwx, 9位, 例如 0755)
     short owner_uid;             // 文件所有者用户ID
@@ -36,7 +48,7 @@ struct Inode
     long long creation_time;     // 创建时间 (时间戳)
     long long modification_time; // 最后修改时间 (时间戳)
     long long access_time;       // 最后访问时间 (时间戳)
-    int direct_blocks[10];       // 直接数据块指针 (假设10个, 具体数量可在 common_defs.h 定义)
+    int direct_blocks[NUM_DIRECT_BLOCKS]; // 直接数据块指针 (NUM_DIRECT_BLOCKS 在 common_defs.h 定义)
     int single_indirect_block;   // 一级间接数据块指针
     int double_indirect_block;   // 二级间接数据块指针
     // int triple_indirect_block; // 三级间接数据块指针 (根据需要可选)

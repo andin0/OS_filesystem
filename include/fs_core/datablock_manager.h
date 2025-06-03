@@ -8,5 +8,9 @@ public:
     int readFileData(Inode &inode, long long offset, char *buffer, int length);
     int writeFileData(Inode &inode, long long offset, const char *buffer, int length, bool &sizeChanged);
     void clearInodeDataBlocks(Inode &inode);
+private: // 添加私有成员变量
+    VirtualDisk* vdisk_;
+    InodeManager* inode_manager_;
+    SuperBlockManager* sb_manager_;
 };
 #endif // DATA_BLOCK_MANAGER_H

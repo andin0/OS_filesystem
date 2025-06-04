@@ -8,7 +8,7 @@ class InodeManager
 {
 public:
     InodeManager(VirtualDisk *vdisk, SuperBlockManager *sbManager);
-    bool readInode(int inodeId, Inode &inode); // Inode 结构体在 data_structures.h
+    bool readInode(int inodeId, Inode &inode) const; // Inode 结构体在 data_structures.h
     bool writeInode(int inodeId, const Inode &inode);
     int getBlockIdForFileOffset(Inode &inode, long long offset, bool allocateIfMissing);
 

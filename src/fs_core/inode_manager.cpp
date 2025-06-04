@@ -16,7 +16,7 @@ InodeManager::InodeManager(VirtualDisk *vdisk, SuperBlockManager *sbManager)
 }
 
 // 从磁盘读取指定的i-node
-bool InodeManager::readInode(int inodeId, Inode &inode)
+bool InodeManager::readInode(int inodeId, Inode &inode) const
 {
     if (!vdisk_ || !sb_manager_)
         return false;

@@ -166,6 +166,13 @@ int DirectoryManager::resolvePathToInode(const std::string &path, int currentDir
 
 bool DirectoryManager::addEntry(Inode &parentDirInode, const std::string &name, int entryInodeId, FileType type)
 { //
+
+// --- DEBUG START: Log initial state ---
+    // std::cerr << "[DEBUG] addEntry: Called for parent inode " << parentDirInode.inode_id 
+    //           << " to add '" << name << "' pointing to inode " << entryInodeId 
+    //           << ". Initial parent size: " << parentDirInode.file_size << std::endl;
+    // --- DEBUG END ---
+
     if (name.length() >= MAX_FILENAME_LENGTH)
     { //
         std::cerr << "Error: Filename '" << name << "' is too long." << std::endl;
@@ -181,6 +188,11 @@ bool DirectoryManager::addEntry(Inode &parentDirInode, const std::string &name, 
     strncpy(newEntry.filename, name.c_str(), MAX_FILENAME_LENGTH - 1); //
     newEntry.filename[MAX_FILENAME_LENGTH - 1] = '\0';                 // 确保 null 结尾
     newEntry.inode_id = entryInodeId;                                  //
+
+// --- DEBUG START: Log new entry details before writing ---
+    // std::cout << "[DEBUG] addEntry: Prepared DirectoryEntry: filename='" << newEntry.filename 
+    //           << "', inode_id=" << newEntry.inode_id << std::endl;
+    //--- DEBUG END ---
 
     // 遍历父目录的数据块，查找空位或追加
     // Directory entries are stored one after another in data blocks.
@@ -245,6 +257,11 @@ bool DirectoryManager::addEntry(Inode &parentDirInode, const std::string &name, 
             parentDirInode.direct_blocks[currentBlockIndex] = newBlockId; //
             memset(blockBuffer, 0, DEFAULT_BLOCK_SIZE);                   // // 清零新块
             offsetInBlock = 0;                                            // 从新块的开始写
+            // --- DEBUG START: Log block allocation ---
+            // std::cout << "[DEBUG] addEntry: Allocated new block " << newBlockId 
+            //           << " for parent inode " << parentDirInode.inode_id 
+            //           << " at direct_blocks[" << currentBlockIndex << "]" << std::endl;
+            //--- DEBUG END ---
         }
         else
         {
@@ -254,6 +271,11 @@ bool DirectoryManager::addEntry(Inode &parentDirInode, const std::string &name, 
                 std::cerr << "Error reading directory block for append." << std::endl;
                 return false;
             }
+            // --- DEBUG START: Log reading existing block for append ---
+            // std::cout << "[DEBUG] addEntry: Reading existing block " 
+            //           << parentDirInode.direct_blocks[currentBlockIndex == 0 ? 0 : currentBlockIndex] 
+            //           << " for appending." << std::endl;
+            //--- DEBUG END ---
         }
 
         DirectoryEntry *entries = reinterpret_cast<DirectoryEntry *>(blockBuffer); //
@@ -261,14 +283,25 @@ bool DirectoryManager::addEntry(Inode &parentDirInode, const std::string &name, 
         if (entryIndexInBlock < entriesPerBlock)
         {
             entries[entryIndexInBlock] = newEntry;
-            if (!db_manager_->vdisk_->writeBlock(parentDirInode.direct_blocks[currentBlockIndex == 0 ? 0 : currentBlockIndex - 1], blockBuffer, DEFAULT_BLOCK_SIZE))
-            { //
+            // --- DEBUG START: Log details of entry being placed ---
+            // std::cout << "[DEBUG] addEntry: Placing entry ('" << newEntry.filename << "', " << newEntry.inode_id 
+            //           << ") into blockBuffer at index " << entryIndexInBlock << std::endl;
+            // --- DEBUG END ---
+            int blockToWrite = parentDirInode.direct_blocks[currentBlockIndex]; // currentBlockIndex 是目标块的索引
+
+            if (!db_manager_->vdisk_->writeBlock(blockToWrite, blockBuffer, DEFAULT_BLOCK_SIZE))
+            {  //
                 std::cerr << "Error writing new entry to directory block." << std::endl;
                 // TODO: should free allocated block if this was a new block
                 return false;
             }
             entryWritten = true;
             parentDirInode.file_size += sizeof(DirectoryEntry); //
+            // --- DEBUG START: Log parent inode file_size change ---
+            // std::cout << "[DEBUG] addEntry: Parent inode " << parentDirInode.inode_id 
+            //           << " file_size changed from " << dirSize 
+            //           << " to " << parentDirInode.file_size << std::endl;
+            // --- DEBUG END ---
         }
         else
         {
@@ -302,7 +335,7 @@ bool DirectoryManager::addEntry(Inode &parentDirInode, const std::string &name, 
     return true;
 }
 
-int DirectoryManager::findEntry(Inode &dirInode, const std::string &name)
+int DirectoryManager::findEntry(Inode &dirInode, const std::string &name) const
 { //
     if (dirInode.file_type != FileType::DIRECTORY)
     {                            //
@@ -343,7 +376,7 @@ int DirectoryManager::findEntry(Inode &dirInode, const std::string &name)
     return INVALID_INODE_ID; //
 }
 
-std::vector<DirectoryEntry> DirectoryManager::listEntries(Inode &dirInode)
+std::vector<DirectoryEntry> DirectoryManager::listEntries(Inode &dirInode) const
 {                                       //
     std::vector<DirectoryEntry> result; //
     if (dirInode.file_type != FileType::DIRECTORY)

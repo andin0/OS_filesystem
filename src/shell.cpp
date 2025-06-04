@@ -1,4 +1,4 @@
-#include "all_includes.h" // 确保包含了 shell.h 和 filesystem.h
+#include "shell.h" 
 
 Shell::Shell(FileSystem *fs) : fs_(fs) {}
 
@@ -158,7 +158,7 @@ void Shell::handleLs(const std::vector<std::string> &args)
 {
     std::string path = (args.size() > 1) ? args[1] : "."; // 默认为当前目录
     std::string result = fs_->dir(path);                  //
-    std::cout << result;                                  // dir方法应返回格式化好的字符串
+    std::cout << result<<std::flush;                                  // dir方法应返回格式化好的字符串
 }
 
 void Shell::handleCreate(const std::vector<std::string> &args)

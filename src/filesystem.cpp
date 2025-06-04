@@ -409,6 +409,80 @@ void FileSystem::releaseFd(int fd)
     }
 }
 
+std::string FileSystem::getPathFromInodeId(int targetInodeId) const
+{
+    if (targetInodeId == ROOT_DIRECTORY_INODE_ID)
+    {
+        return "/";
+    }
+
+    std::string path;
+    std::stack<std::string> path_segments;
+    int current_inode_id = targetInodeId;
+
+    while (current_inode_id != ROOT_DIRECTORY_INODE_ID && current_inode_id != INVALID_INODE_ID)
+    {
+        Inode current_inode;
+        if (!inode_manager_.readInode(current_inode_id, current_inode))
+        {
+            // Error reading inode, path is corrupted or invalid
+            return "/<corrupted_path>";
+        }
+
+        // 查找当前目录在其父目录中的名称
+        int parent_inode_id = dir_manager_.findEntry(current_inode, ".."); // 找到父目录的inode ID
+        if (parent_inode_id == INVALID_INODE_ID)
+        {
+            return "/<invalid_parent>"; // Path corrupted
+        }
+
+        Inode parent_inode;
+        if (!inode_manager_.readInode(parent_inode_id, parent_inode))
+        {
+            return "/<corrupted_parent_inode>";
+        }
+
+        std::vector<DirectoryEntry> parent_entries = dir_manager_.listEntries(parent_inode);
+        std::string found_name = "";
+        for (const auto &entry : parent_entries)
+        {
+            if (entry.inode_id == current_inode_id)
+            {
+                found_name = entry.filename;
+                // Avoid ".." and "." entries themselves if they are the target
+                if (found_name == "." || found_name == "..") continue; 
+                break;
+            }
+        }
+
+        if (found_name.empty())
+        {
+            // This might happen if the current_inode_id is the root and we are looking for its name in its own parent (which is itself)
+            // Or if the directory entry somehow got corrupted.
+            return "/<name_not_found>"; // Should not happen in a consistent FS
+        }
+        path_segments.push(found_name);
+        current_inode_id = parent_inode_id;
+    }
+
+    // 构建完整路径
+    while (!path_segments.empty())
+    {
+        path += "/";
+        path += path_segments.top();
+        path_segments.pop();
+    }
+
+    if (path.empty() && targetInodeId == ROOT_DIRECTORY_INODE_ID)
+    {
+        return "/";
+    }
+    else if (path.empty()) { // Should not happen for non-root, valid paths
+        return "/"; // Fallback to root if path is unexpectedly empty
+    }
+    return path;
+}
+
 int FileSystem::open(const std::string &path, OpenMode mode)
 {
     User *currentUser = user_manager_.getCurrentUser();
@@ -644,11 +718,12 @@ std::vector<std::string> FileSystem::find(const std::string &startPath, const st
 
 std::string FileSystem::getCurrentPathPrompt() const
 {
-
     User *currentUser = user_manager_.getCurrentUser();
     std::string username = currentUser ? currentUser->username : "guest";
 
-    return username + "@MyFS:/path/to/current(inode:" + std::to_string(current_dir_inode_id_) + ")";
+    // 使用辅助函数获取当前路径字符串
+    std::string currentPath = getPathFromInodeId(current_dir_inode_id_);
+    return username + "@MyFS:" + currentPath;
 }
 
 bool FileSystem::create(const std::string &path)

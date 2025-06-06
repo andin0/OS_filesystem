@@ -1,6 +1,6 @@
 from enum import Enum
 import os
-import struct
+import ast
 import pickle
 from pathlib import Path
 
@@ -10,6 +10,7 @@ TOTAL_BLOCKS = 10240  # 总块数，约 10MB
 INODE_COUNT = 1024  # 索引节点数
 DISK_PATH = "./disk/disk.img"
 HOME_DIR = "/home"
+NICFREE = 50  # 成组链接法中，每组包含的空闲块数量（超级块缓存以及磁盘链块）
 
 # 用户定义
 USERS = [
@@ -50,16 +51,97 @@ class SuperBlock:
         self.block_size = BLOCK_SIZE
         self.total_blocks = TOTAL_BLOCKS
         self.inode_count = INODE_COUNT
-        self.free_blocks = list(range(10, TOTAL_BLOCKS))
         self.free_inodes = list(range(10, INODE_COUNT))
 
-    def allocate_block(self):
-        if self.free_blocks:
-            return self.free_blocks.pop(0)
-        raise Exception("No free blocks available")
+        # 成组链接法相关变量
+        self.s_nfree = 0  # s_free 栈中当前空闲块的数量
+        self.s_free = [0] * NICFREE  # 存储空闲块块号的栈
 
-    def free_block(self, block_id):
-        self.free_blocks.insert(0, block_id)
+    def allocate_block(self, fs):  # fs 是 FileSystem 实例，用于访问 data_blocks
+        """
+        分配一个空闲磁盘块。
+        使用成组链接法。
+        """
+        if self.s_nfree <= 0:
+            # s_nfree 为0表示超级块缓存已空，理论上在上次分配后已尝试加载。
+            # 如果仍然为0，表示磁盘已满或自由链表损坏。
+            raise Exception("磁盘已满或超级块空闲块列表缓存为空且无法补充。")
+
+        self.s_nfree -= 1
+        block_id = self.s_free[self.s_nfree]  # 从栈顶获取块号
+
+        if block_id == 0:  # 块号0通常是无效的或保留的，不应被分配
+            self.s_nfree += 1  # 恢复计数
+            raise Exception("尝试分配块号0，此块号无效或表示空闲链表结束。")
+
+        if self.s_nfree == 0:
+            # 超级块中的栈已空，刚分配的 block_id 本身应包含下一组空闲块的信息
+            # (它之前是栈顶，现在被分配出去，同时它也是下一组的“头块”)
+            try:
+                # print(f"调试：分配块 {block_id}，s_nfree 变为 0。从块 {block_id} 加载下一组。")
+                next_group_data = fs.data_blocks[
+                    block_id
+                ]  # 该块应存储 [数量, 块号1, 块号2, ...]
+
+                if not isinstance(next_group_data, list) or not next_group_data:
+                    # 如果 block_id 的内容不是预期的列表格式，说明空闲链可能已损坏
+                    # 这可能是因为该块被错误地覆写了
+                    self.s_nfree = 0  # 确保 s_nfree 保持为0，下次分配会失败
+                    raise Exception(
+                        f"空闲链表损坏：块 {block_id} (应为头块) 包含无效内容: {next_group_data}"
+                    )
+
+                count_in_disk_group = next_group_data[0]  # 列表第一个元素是数量
+                if not (0 <= count_in_disk_group <= NICFREE):  # 数量有效性检查
+                    self.s_nfree = 0
+                    raise Exception(
+                        f"空闲链表损坏：在头块 {block_id} 中发现无效的空闲块数量 {count_in_disk_group}"
+                    )
+
+                self.s_nfree = count_in_disk_group
+                for i in range(self.s_nfree):
+                    self.s_free[i] = next_group_data[i + 1]  # 后续元素是块号
+
+                # print(f"调试：已加载 {self.s_nfree} 个块到超级块缓存。新的 s_free 栈顶: {self.s_free[self.s_nfree-1] if self.s_nfree > 0 else '空'}")
+                # 如果加载后 s_nfree 仍然是0 (例如，从磁盘加载了一个空列表)，
+                # 那么下一次调用 allocate_block 时，顶部的 s_nfree <= 0 检查会捕获到“磁盘满”的情况。
+
+            except KeyError:
+                # 如果 block_id 不在 fs.data_blocks 中，说明链断裂或磁盘确实满了。
+                # 此时 s_nfree 已经是0，下次分配会失败。
+                self.s_nfree = 0  # 确保 s_nfree 为0，表示耗尽
+                # print(f"调试：空闲链表结束或链断裂。无法从块 {block_id} 加载下一组。s_nfree 为 0。")
+            except IndexError:
+                self.s_nfree = 0  # 出错时确保 s_nfree 为0
+                raise Exception(f"空闲链表损坏：块 {block_id} (头块) 数据格式错误。")
+
+        # print(f"调试：已分配块 {block_id}。超级块 s_nfree 现在是 {self.s_nfree}")
+        return block_id
+
+    def free_block(self, block_id, fs):  # fs 是 FileSystem 实例
+        """
+        释放一个磁盘块。
+        使用成组链接法。
+        """
+        if block_id <= 0:  # 不能释放块0或无效块
+            print(f"警告：尝试释放无效的块 ID {block_id}")
+            return
+
+        if self.s_nfree >= NICFREE:
+            # 超级块的 s_free 栈已满。
+            # 将当前 s_free 的内容写入到正被释放的 block_id 块中，
+            # 使 block_id 成为一个新的包含一组空闲块号的“头块”。
+            # print(f"调试：释放块 {block_id}。超级块缓存已满。将缓存写入块 {block_id}。")
+            data_to_write_to_disk = [self.s_nfree] + [
+                self.s_free[i] for i in range(self.s_nfree)
+            ]
+            fs.data_blocks[block_id] = data_to_write_to_disk  # 写入 [数量, 块号1, ...]
+            self.s_nfree = 0  # 清空超级块缓存计数
+
+        # 将刚释放的 block_id 加入到超级块的 s_free 栈中
+        self.s_free[self.s_nfree] = block_id
+        self.s_nfree += 1
+        # print(f"调试：已释放块 {block_id}。超级块 s_nfree 现在是 {self.s_nfree}。s_free 栈顶: {self.s_free[self.s_nfree-1]}")
 
     def allocate_inode(self):
         if self.free_inodes:
@@ -79,7 +161,6 @@ class Inode:
         self.perms = perms
         self.size = 0
         self.blocks = []  # 数据块列表
-        self.links = []  # 硬链接或符号链接
         self.link_count = (
             1 if not is_dir else 2
         )  # Files start with 1 link, directories with 2 (self and parent)
@@ -169,14 +250,21 @@ class FileSystem:
         self.inodes[0].blocks.append(0)  # Root inode points to block 0
 
         # Create /home directory inode
-        home_inode = Inode(1, is_dir=True, owner=0)
+        home_inode = Inode(1, is_dir=True, owner=0, perms=0o755)
         self.inodes[1] = home_inode
 
         # Assign block 1 to /home directory and set its entries
         self.data_blocks[1] = {".": 1, "..": 0}  # /home's entries
         self.inodes[1].blocks.append(1)  # /home inode points to block 1
 
+        # 初始化空闲块列表 (使用成组链接法)
+        # 假设块0-9被保留或已用于上述目录。实际空闲数据块从10开始。
+        first_actual_data_block = 10
+        # 将所有可用块（从后向前）加入空闲列表，这样较低编号的块会先被分配
+        for i in range(TOTAL_BLOCKS - 1, first_actual_data_block - 1, -1):
+            self.superblock.free_block(i, self)  # 将 FileSystem 实例传递给 free_block
         self.save_disk()
+        self.isSudo = True
         curr_user = None
         if self.current_user:
             curr_user = self.current_user["username"]
@@ -188,6 +276,7 @@ class FileSystem:
         self.logout()
         if curr_user:
             self.login(curr_user, curr_user)
+        self.isSudo = False
 
     def login(self, username, password):
         for user in USERS:
@@ -245,7 +334,7 @@ class FileSystem:
         new_inode = Inode(
             new_inode_id, is_dir=True, owner=self.current_user["uid"], perms=0o755
         )
-        block_id = self.superblock.allocate_block()
+        block_id = self.superblock.allocate_block(self)
         self.inodes[new_inode_id] = new_inode
         self.data_blocks[block_id] = {".": new_inode_id, "..": parent_inode}
         new_inode.blocks.append(block_id)
@@ -293,9 +382,9 @@ class FileSystem:
             items = self.data_blocks.get(dir_block_id, {})
         else:
             return f"{path} is not a directory"
-        items = self.data_blocks.get(current_inode, {})
+        # items = self.data_blocks.get(current_inode, {})
         result = []
-        headers = ["Permissions", "Type", "Owner", "Size", "Name"]
+        headers = ["Permissions", "Links", "Owner", "Size", "Name"]
         result.append(
             f"{headers[0]:<11} {headers[1]:>5} {headers[2]:<10} {headers[3]:>6} {headers[4]}"
         )
@@ -310,14 +399,13 @@ class FileSystem:
                 perm_str = "d" + perm_str
             else:
                 perm_str = "-" + perm_str
-            file_type = "dir" if inode.is_dir else "file"
             owner_uid = inode.owner
             owner = next(
                 (u["username"] for u in USERS if u["uid"] == owner_uid),
                 str(owner_uid),
             )
             size = inode.size if not inode.is_dir else ""
-            line = f"{perm_str:<12} {file_type:>4} {owner:<10} {size:>6} {name}"
+            line = f"{perm_str:<12} {inode.link_count:>4} {owner:<10} {size:>6} {name}"
             result.append(line)
         return "\n".join(result)
 
@@ -364,7 +452,7 @@ class FileSystem:
         if entry.openMode not in {OpenMode.WRITE, OpenMode.READ_WRITE}:
             return "Error. File opened in readonly mode"
         inode = self.inodes[inode_id]
-        block_id = self.superblock.allocate_block()
+        block_id = self.superblock.allocate_block(self)
         self.data_blocks[block_id] = data.encode()
         inode.blocks.append(block_id)
         inode.size += len(data)
@@ -416,18 +504,23 @@ class FileSystem:
         if inode.is_dir and recursive:
             # Recursively delete directory contents
             dir_contents = self.data_blocks.get(inode_id, {}).copy()
+            errors = []
             for item, child_inode_id in dir_contents.items():
                 if item in [".", ".."]:
                     continue
                 child_path = f"{file_name}/{item}"
-                self.delete(child_path, recursive=True)
+                res = self.delete(child_path, recursive=True)
+                if "in use" in res or "Permission denied" in res:
+                    errors.append(res)
+            if errors:
+                return "\n".join(errors)
 
         # Decrease link count
         inode.link_count -= 1
         if inode.link_count == 0:
             # Free all data blocks
             for block_id in inode.blocks:
-                self.superblock.free_block(block_id)
+                self.superblock.free_block(block_id, self)
             # Free the inode
             self.superblock.free_inode(inode_id)
             del self.inodes[inode_id]
@@ -442,12 +535,15 @@ class FileSystem:
 
     def cp(self, src, dst, recursive=False):
         try:
+            # Resolve source inode
             src_inode_id = self.resolve_path(src)
             src_inode = self.inodes[src_inode_id]
 
+            # Check if source is a directory and -r is not specified
             if src_inode.is_dir and not recursive:
                 return f"cp: omitting directory '{src}' (use -r to copy directories)"
 
+            # Resolve destination parent and name
             dst_parent_path = os.path.dirname(dst)
             dst_name = os.path.basename(dst)
 
@@ -457,7 +553,9 @@ class FileSystem:
                 dst_parent_id = self.current_dir_inode
 
             dst_parent_inode = self.inodes[dst_parent_id]
+            dst_parent_block_id = dst_parent_inode.blocks[0]
 
+            # Check permissions
             if not self.has_perms(src_inode, "r"):
                 return f"Permission denied to read source '{src}'."
             if not self.has_perms(dst_parent_inode, "w"):
@@ -468,15 +566,17 @@ class FileSystem:
                 dst_inode_id = self.resolve_path(dst)
                 dst_inode = self.inodes[dst_inode_id]
                 if dst_inode.is_dir:
+                    # If destination is a directory, copy into it
                     new_dst_path = os.path.join(dst, os.path.basename(src))
                     return self.cp(src, new_dst_path, recursive)
                 else:
+                    # If destination is a file, overwrite it
                     self.delete(dst)
             except Exception:
-                pass
+                pass  # Destination doesn't exist, proceed
 
             if src_inode.is_dir:
-                # Create new directory at destination
+                # Create new directory
                 new_inode_id = self.superblock.allocate_inode()
                 new_inode = Inode(
                     new_inode_id,
@@ -485,21 +585,28 @@ class FileSystem:
                     perms=src_inode.perms,
                 )
                 self.inodes[new_inode_id] = new_inode
-                block_id = self.superblock.allocate_block()
+                block_id = self.superblock.allocate_block(self)
+                # Initialize directory data block
                 self.data_blocks[block_id] = {".": new_inode_id, "..": dst_parent_id}
-                new_inode.blocks.append(
-                    block_id
-                )  # This line is correct as-is in some implementations
-                self.data_blocks[dst_parent_id][dst_name] = new_inode_id
+                new_inode.blocks.append(block_id)
+                # Add new directory to parent
+                self.data_blocks[dst_parent_block_id][dst_name] = new_inode_id
 
-                # Recursively copy contents
-                src_block_id = src_inode.blocks[0]  # Fix this line
-                for item, child_inode_id in self.data_blocks[src_block_id].items():
+                # Recursively copy directory contents
+                src_block_id = src_inode.blocks[0]
+                if not isinstance(self.data_blocks.get(src_block_id, {}), dict):
+                    raise Exception(
+                        f"Source directory block {src_block_id} is not a dictionary"
+                    )
+                for item, child_inode_id in self.data_blocks.get(
+                    src_block_id, {}
+                ).items():
                     if item in [".", ".."]:
                         continue
                     child_src_path = src + "/" + item
                     child_dst_path = dst + "/" + item
                     self.cp(child_src_path, child_dst_path, recursive=True)
+
             else:
                 # Copy file
                 new_inode_id = self.superblock.allocate_inode()
@@ -509,10 +616,17 @@ class FileSystem:
                     owner=self.current_user["uid"],
                     perms=src_inode.perms,
                 )
-                new_inode.blocks = src_inode.blocks.copy()
+                # Copy file data blocks
+                for block_id in src_inode.blocks:
+                    if not isinstance(self.data_blocks.get(block_id, {}), bytes):
+                        raise Exception(f"Source file block {block_id} is not bytes")
+                    new_block_id = self.superblock.allocate_block(self)
+                    self.data_blocks[new_block_id] = self.data_blocks[block_id]
+                    new_inode.blocks.append(new_block_id)
                 new_inode.size = src_inode.size
                 self.inodes[new_inode_id] = new_inode
-                self.data_blocks[dst_parent_id][dst_name] = new_inode_id
+                # Add new file to parent
+                self.data_blocks[dst_parent_block_id][dst_name] = new_inode_id
 
             self.save_disk()
             return f"Copied {src} to {dst}"
@@ -544,7 +658,7 @@ class FileSystem:
                 dst_inode = self.inodes[dst_inode_id]
                 if dst_inode.is_dir:
                     # 如果目标是目录，将源移动到该目录内
-                    new_dst_path = os.path.join(dst, os.path.basename(src))
+                    new_dst_path = path_join(dst, os.path.basename(src))
                     return self.mv(src, new_dst_path)
                 else:
                     # 如果目标是文件，覆盖它
@@ -617,11 +731,12 @@ class FileSystem:
             return "Permission denied to read source"
         if not self.has_perms(self.inodes[dst_parent], "w"):
             return "Permission denied to write to destination directory"
+        if self.inodes[src_inode_id].is_dir:
+            return "ln only supports hard link files."
         if name in self.data_blocks.get(dst_parent, {}):
             return f"Destination {dst} already exists"
         self.data_blocks.setdefault(dst_parent, {})[name] = src_inode_id
         self.inodes[src_inode_id].link_count += 1
-        self.inodes[src_inode_id].links.append(dst)
         self.save_disk()
         return f"Link {dst} created for {src}"
 
@@ -691,11 +806,16 @@ class FileSystem:
         inode_id = self.current_dir_inode
         visited = set()
         while inode_id != 0 and inode_id not in visited:
-            parent_inode = self.data_blocks.get(inode_id, {}).get("..")
+            dir_block_id = self.inodes[inode_id].blocks[0]
+            if not isinstance(self.data_blocks.get(dir_block_id, {}), dict):
+                return (
+                    f"{self.current_user['username']}@myFS:[invalid directory block] $ "
+                )
+            parent_inode = self.data_blocks[dir_block_id].get("..")
             if parent_inode is None:
                 return f"{self.current_user['username']}@myFS:[invalid path] $ "
             visited.add(inode_id)
-            parent_data = self.data_blocks.get(parent_inode, {})
+            parent_data = self.data_blocks.get(self.inodes[parent_inode].blocks[0], {})
             name = None
             for n, id in parent_data.items():
                 if id == inode_id and n not in [".", ".."]:
@@ -704,28 +824,86 @@ class FileSystem:
             if name:
                 path.append(name)
             inode_id = parent_inode
-        path = "/".join(reversed(path)) if path else "/"
+        path = "/".join(reversed(path)) if path else ""
         return f"{self.current_user['username']}@myFS:/{path} $ "
 
 
 def tokenizer(prompt):
-    inQuotes = False
     tokens = []
     current_token = ""
-    for char in prompt:
-        if char == '"' or char == "'":
-            inQuotes = not inQuotes
-            if not inQuotes and current_token:
-                tokens.append(current_token)
-                current_token = ""
-        elif char.isspace() and not inQuotes:
-            if current_token:
-                tokens.append(current_token)
-                current_token = ""
+    in_single_quote = False
+    in_double_quote = False
+    i = 0
+    while i < len(prompt):
+        char = prompt[i]
+
+        # 处理转义字符
+        if char == "\\" and (in_single_quote or in_double_quote):
+            i += 1
+            if i >= len(prompt):
+                break
+            next_char = prompt[i]
+            if next_char == "n" and in_double_quote:
+                current_token += "\n"
+            elif next_char == "t" and in_double_quote:
+                current_token += "\t"
+            elif next_char == '"' and in_double_quote:
+                current_token += '"'
+            elif next_char == "'" and in_single_quote:
+                current_token += "'"
+            elif next_char == "\\":
+                current_token += "\\"
+            else:
+                current_token += "\\" + next_char  # 保留原样
+            i += 1
+            continue
+
+        # 引号处理
+        if char == '"':
+            if in_double_quote:
+                in_double_quote = False
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+            else:
+                if not in_single_quote:
+                    in_double_quote = True
+                    if current_token:
+                        tokens.append(current_token)
+                        current_token = ""
+            i += 1
+            continue
+        elif char == "'":
+            if in_single_quote:
+                in_single_quote = False
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+            else:
+                if not in_double_quote:
+                    in_single_quote = True
+                    if current_token:
+                        tokens.append(current_token)
+                        current_token = ""
+            i += 1
+            continue
+
+        # 空格分隔逻辑
+        if char.isspace():
+            if in_single_quote or in_double_quote:
+                current_token += char
+            else:
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
         else:
             current_token += char
+        i += 1
+
+    # 结尾处理
     if current_token:
         tokens.append(current_token)
+
     return tokens
 
 
@@ -771,7 +949,7 @@ def main():
             elif command == "mkdir" and len(args) == 1:
                 print(fs.mkdir(args[0]))
             elif command in ["chdir", "cd"] and len(args) == 1:
-                print(fs.chdir(args[0]))
+                fs.chdir(args[0])
             elif command in ["dir", "ls"]:
                 print(fs.dir(*args))
             elif command == "create" and len(args) == 1:
@@ -779,7 +957,11 @@ def main():
             elif command == "open" and len(args) == 2:
                 print(fs.open(*args))
             elif command == "write" and len(args) == 2:
-                print(fs.write(convert_fd(args[0]), args[1]))
+                try:
+                    data = ast.literal_eval(f'"{args[1]}"')  # 将 "\n" 转换为换行符
+                except (SyntaxError, ValueError):
+                    data = args[1]  # 如果解析失败，保留原始字符串
+                print(fs.write(convert_fd(args[0]), data))
             elif command == "read" and len(args) == 1:
                 print(fs.read(convert_fd(args[0])))
             elif command == "close" and len(args) == 1:
@@ -812,7 +994,7 @@ def main():
             else:
                 print("未知命令或参数错误，输入 'help' 查看帮助")
         except Exception as e:
-            print(f"错误: {e}")
+            print(f"{e}")
         fs.isSudo = False
 
 

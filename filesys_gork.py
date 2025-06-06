@@ -1,8 +1,8 @@
-from enum import Enum
 import os
 import ast
 import pickle
 from pathlib import Path
+from enum import Enum
 
 # 常量定义
 BLOCK_SIZE = 1024  # 每个块 1KB
@@ -29,6 +29,8 @@ class OpenMode(Enum):
     READ = "r"
     WRITE = "w"
     READ_WRITE = "rw"
+    APPEND = "a"
+    READ_APPEND = "ra"
 
 
 def convert_fd(s: str):
@@ -44,6 +46,10 @@ def path_join(path: str, *args: str):
         res += "/" + p
     return res
 
+class SeekMode(Enum):
+    SEEK_SET = 0  # 从文件开头
+    SEEK_CUR = 1  # 从当前位置
+    SEEK_END = 2  # 从文件末尾
 
 # 超级块结构
 class SuperBlock:
@@ -171,7 +177,7 @@ class OpenFileEntry:
     def __init__(self, inode_id: int, mode: OpenMode):
         self.id = inode_id
         self.openMode = mode
-
+        self.offset = 0  # 新增：文件指针偏移量
 
 # 文件系统类
 class FileSystem:
@@ -425,6 +431,48 @@ class FileSystem:
         self.data_blocks[parent_block_id][name] = new_inode_id  # 添加到正确的数据块
         self.save_disk()
         return f"File {file_name} created"
+    
+    def seek(self, fd, offset, whence=SeekMode.SEEK_SET):
+        """
+        移动文件描述符 fd 的文件指针到指定位置。
+        参数：
+            fd: 文件描述符
+            offset: 偏移量（可以为正或负，取决于 whence）
+            whence: 定位方式（SEEK_SET, SEEK_CUR, SEEK_END）
+        返回：
+            当前文件指针位置（成功）或错误信息（失败）
+        """
+        if not isinstance(fd, int) or fd not in self.open_files:
+            return "无效的文件描述符"
+        
+        entry = self.open_files[fd]
+        inode_id = entry.id
+        inode = self.inodes[inode_id]
+        
+        if inode.is_dir:
+            return f"文件描述符 {fd} 指向一个目录，无法执行 seek 操作"
+        
+        # 计算新的偏移量
+        if whence == SeekMode.SEEK_SET:
+            new_offset = offset
+        elif whence == SeekMode.SEEK_CUR:
+            new_offset = entry.offset + offset
+        elif whence == SeekMode.SEEK_END:
+            new_offset = inode.size + offset
+        else:
+            return "无效的 whence 参数"
+        
+        # 检查偏移量合法性
+        if new_offset < 0:
+            return "偏移量不能为负"
+        
+        # 对于只读模式，偏移量不能超过文件大小
+        if entry.openMode == OpenMode.READ and new_offset > inode.size:
+            return f"偏移量 {new_offset} 超出文件大小 {inode.size}"
+        
+        # 更新偏移量
+        entry.offset = new_offset
+        return f"文件指针移动到位置 {entry.offset}"
 
     def open(self, file_name, openmode="r"):
         try:
@@ -439,6 +487,8 @@ class FileSystem:
             return "Permission denied"
         if "w" in openmode and not self.has_perms(inode, "w"):
             return "Permission denied"
+        if "a" in openmode and not self.has_perms(inode, "w"):
+            return "Permission denied"
         fd = len(self.open_files)
         self.inodes[inode_id].lock = True
         self.open_files[fd] = OpenFileEntry(inode_id, mode)
@@ -449,27 +499,139 @@ class FileSystem:
             return "Invalid file descriptor"
         entry = self.open_files[fd]
         inode_id = entry.id
-        if entry.openMode not in {OpenMode.WRITE, OpenMode.READ_WRITE}:
+        if entry.openMode not in {OpenMode.WRITE, OpenMode.READ_WRITE, OpenMode.APPEND, OpenMode.READ_APPEND}:
             return "Error. File opened in readonly mode"
         inode = self.inodes[inode_id]
-        block_id = self.superblock.allocate_block(self)
-        self.data_blocks[block_id] = data.encode()
-        inode.blocks.append(block_id)
-        inode.size += len(data)
+
+        if entry.openMode == OpenMode.APPEND or entry.openMode == OpenMode.READ_APPEND:
+            block_id = self.superblock.allocate_block(self)
+            self.data_blocks[block_id] = data.encode()
+            inode.blocks.append(block_id)
+            inode.size += len(data)
+        else:
+            # 覆写模式：从 entry.offset 开始写入
+            write_size = len(data)
+            cur_offset = entry.offset
+            data_bytes = data.encode()  # 转换为字节以便分块处理
+            bytes_written = 0
+            block_index = 0
+
+            # 遍历现有块，寻找写入起始位置
+            while block_index < len(inode.blocks) and bytes_written < write_size:
+                block_id = inode.blocks[block_index]
+                block_data = self.data_blocks[block_id].decode()
+                block_len = len(block_data)
+
+                if cur_offset < block_len:
+                    # 当前块包含写入起始位置
+                    available_in_block = block_len - cur_offset
+                    bytes_to_write = min(write_size - bytes_written, available_in_block)
+
+                    # 写入当前块
+                    new_block_data = (
+                        block_data[:cur_offset]
+                        + data[bytes_written:bytes_written + bytes_to_write]
+                        + block_data[cur_offset + bytes_to_write:]
+                    )
+                    self.data_blocks[block_id] = new_block_data.encode()
+
+                    bytes_written += bytes_to_write
+                    cur_offset += bytes_to_write  # 更新块内偏移量
+
+                    if bytes_written < write_size:
+                        # 还有数据未写入，移动到下一个块
+                        block_index += 1
+                        cur_offset = 0  # 下一个块从头开始
+                    else:
+                        break
+                else:
+                    # 偏移量超出当前块，跳到下一个块
+                    cur_offset -= block_len
+                    block_index += 1
+
+            # 如果数据未写完，分配新块
+            while bytes_written < write_size:
+                block_id = self.superblock.allocate_block(self)
+                bytes_to_write = min(write_size - bytes_written, BLOCK_SIZE)
+                new_block_data = data[bytes_written:bytes_written + bytes_to_write]
+                self.data_blocks[block_id] = new_block_data.encode()
+                inode.blocks.append(block_id)
+                bytes_written += bytes_to_write
+
+            # 如果写入位置超出原文件大小，更新文件大小
+            if entry.offset + write_size > inode.size:
+                inode.size = entry.offset + write_size
+
+            # 清理可能不再需要的块
+            if block_index < len(inode.blocks):
+                # 释放从 block_index 之后的块（如果它们被完全覆盖且无需保留）
+                blocks_to_free = inode.blocks[block_index + 1:]
+                for block_id in blocks_to_free:
+                    self.superblock.free_block(block_id, self)
+                inode.blocks = inode.blocks[:block_index + 1]
         self.save_disk()
         return "Write successful"
 
-    def read(self, fd):
-        if type(fd) is not int or fd not in self.open_files:
-            return "Invalid file descriptor"
+    def read(self, fd, length=None):
+        if not isinstance(fd, int) or fd not in self.open_files:
+            return "无效的文件描述符"
         entry = self.open_files[fd]
         inode_id = entry.id
-        if entry.openMode not in {OpenMode.READ, OpenMode.READ_WRITE}:
-            return "Error. File opened in writeonly mode"
+        if entry.openMode not in {OpenMode.READ, OpenMode.READ_WRITE, OpenMode.READ_APPEND}:
+            return "错误：文件以只写模式打开"
         inode = self.inodes[inode_id]
+        
+        # 检查是否为目录或空文件
+        if inode.is_dir:
+            return f"文件描述符 {fd} 指向一个目录，无法读取"
+        if inode.size == 0:
+            return ""
+        
+        # 检查偏移量是否有效
+        if entry.offset > inode.size:
+            return f"偏移量 {entry.offset} 超出文件大小 {inode.size}"
+        
+        # 计算剩余可读字节数
+        remaining_size = inode.size - entry.offset
+        if remaining_size <= 0:
+            return ""
+        
+        # 确定读取长度
+        read_length = remaining_size if length is None else min(length, remaining_size)
+        if read_length <= 0:
+            return ""
+        
+        print(f"读取 {read_length} 字节，从偏移量 {entry.offset} 开始")
+        
         content = ""
+        bytes_read = 0
+        bytes_to_read = read_length
+        
+        cur_offset = entry.offset
+        
+        # 遍历数据块，从 offset 开始读取指定长度
         for block_id in inode.blocks:
-            content += self.data_blocks[block_id].decode()
+            if bytes_to_read <= 0:
+                break
+            block_data = self.data_blocks[block_id].decode()
+            
+            # 如果当当前块的长度小于我们要读的offset，就跳过这个块
+            if cur_offset >= len(block_data):
+                cur_offset -= len(block_data)
+                continue
+            
+            # 忽略前 cur_offset 字节
+            if cur_offset > 0:
+                block_data = block_data[cur_offset:]
+                cur_offset = 0
+            # 读取剩余的字节
+            if bytes_to_read > len(block_data):
+                content += block_data
+                bytes_to_read -= len(block_data)
+            else:
+                content += block_data[:bytes_to_read]
+                bytes_to_read = 0
+
         return content
 
     def close(self, fd):
@@ -779,7 +941,8 @@ class FileSystem:
             "cd <path>": "Change current directory. Supports '.', '..', '~', and simple absolute/relative paths.",
             "dir/ls <path>": "List contents of the directory.",
             "create <filename>": "Create a new empty file in the current location.",
-            "open <filename> <mode>": "Open a file. Mode can be 'r' (read) or 'w' (write) or rw.",
+            "seek <fd> <offset> [whence]": "Move the file pointer of an open file descriptor (fd) to a specified position. 'whence' can be SEEK_SET, SEEK_CUR, or SEEK_END.",
+            "open <filename> <mode>": "Open a file. Mode can be 'r' (read) or 'w' (write) or rw (read/write) or a (append) or ra (read/append).",
             "write <fd> <data>": "Write data string to an open file descriptor (fd).",
             "read <fd>": "Read data from an open file descriptor (fd).",
             "close <fd>": "Close an open file descriptor (fd).",
@@ -962,8 +1125,13 @@ def main():
                 except (SyntaxError, ValueError):
                     data = args[1]  # 如果解析失败，保留原始字符串
                 print(fs.write(convert_fd(args[0]), data))
-            elif command == "read" and len(args) == 1:
-                print(fs.read(convert_fd(args[0])))
+            elif command == "read" and len(args) in [1, 2]:
+                try:
+                    fd = convert_fd(args[0])
+                    length = int(args[1]) if len(args) == 2 else None
+                    print(fs.read(fd, length))
+                except ValueError:
+                    print("读取长度必须是整数")
             elif command == "close" and len(args) == 1:
                 print(fs.close(convert_fd(args[0])))
             elif command in ["delete", "rm"] and len(args) in [1, 2]:
@@ -991,6 +1159,24 @@ def main():
                 print(fs.ln(args[0], args[1]))
             elif command == "find" and len(args) == 1:
                 print(fs.find(args[0]))
+            elif command == "seek" and len(args) in [2, 3]:
+                try:
+                    fd = convert_fd(args[0])
+                    offset = int(args[1])
+                    whence = SeekMode.SEEK_SET
+                    if len(args) == 3:
+                        if args[2] == "SEEK_SET":
+                            whence = SeekMode.SEEK_SET
+                        elif args[2] == "SEEK_CUR":
+                            whence = SeekMode.SEEK_CUR
+                        elif args[2] == "SEEK_END":
+                            whence = SeekMode.SEEK_END
+                        else:
+                            print("无效的 whence 参数；使用 SEEK_SET, SEEK_CUR 或 SEEK_END")
+                            continue
+                    print(fs.seek(fd, offset, whence))
+                except ValueError:
+                    print("偏移量必须是整数")
             else:
                 print("未知命令或参数错误，输入 'help' 查看帮助")
         except Exception as e:
